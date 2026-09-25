@@ -451,7 +451,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "esp32-c3-led.kicad_pro",
+    "filename": "esp32-led-matrix.kicad_pro",
     "version": 3
   },
   "net_settings": {
