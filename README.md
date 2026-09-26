@@ -54,6 +54,50 @@ upload format: Reference/Value/Footprint/LCSC/MPN/Manufacturer).
 Every part is Basic/Extended JLCPCB stock with a verified LCSC number; no
 DNP parts in this design.
 
+## Component Library Verification
+
+Every symbol/footprint used is confirmed installed via KiCad's Plugin and
+Content Manager on this machine (checked against the global
+`sym-lib-table`/`fp-lib-table`):
+- `PCM_SparkFun-LED` / `PCM_SparkFun-Connector` — SparkFun-KiCad-Libraries
+  (provides the WS2812B_2020 addressable LED and JST-PH 4-pin connector)
+- `PCM_Espressif` — Espressif kicad-libraries (ESP32-C6-WROOM-1 module)
+- All other symbols/footprints (`Device`, `Connector`, `Power_Protection`,
+  `Regulator_Linear`, `Switch`, `Capacitor_SMD`, `Resistor_SMD`, etc.) are
+  built into KiCad 9 by default.
+
+Opening this project on another machine requires installing the SparkFun and
+Espressif libraries via KiCad's Plugin and Content Manager first (Tools →
+Plugin and Content Manager → search "SparkFun" / "Espressif" → Install).
+
+**JLCPCB-verified alternate library ([`lib_jlcpcb/`](lib_jlcpcb/))**: both the
+LED (XL-2020RGBC-2812B, LCSC
+[C5349955](https://www.lcsc.com/product-detail/C5349955.html), **128,513
+units in stock**) and the JST-PH connector (WAFER-PH2.0-4PWB, LCSC
+[C3029442](https://www.lcsc.com/product-detail/C3029442.html), **45,706
+units in stock**) were re-verified live against the JLCPCB Open Platform API
+and a complete symbol+footprint+3D-model bundle was generated directly from
+LCSC's EasyEDA source data via
+[`easyeda2kicad`](https://pypi.org/project/easyeda2kicad/) — each part's
+`kicad_sym` carries its live datasheet URL
+(`lcsc.com/datasheet/<LCSC#>.pdf`) and LCSC part number as a property, and
+`jlcpcb_parts.3dshapes/` has real STEP/WRL 3D models for both parts.
+  - The **LED** footprint currently in use (SparkFun's `WS2812_2020`) already
+    has a complete, working datasheet link and real STEP 3D model on disk —
+    it was left as-is; swapping 128 LED placements to the new footprint
+    would touch copper on an already-fragile routed board for no functional
+    gain (pad geometry is compatible in function but not identical in size).
+  - The **JST connector** (J2) footprint (SparkFun's
+    `JST_1x04_P2.0mm_Horizontal_SMD`) was missing any 3D model — this was
+    fixed by attaching the new verified STEP model
+    (`lib_jlcpcb/jlcpcb_parts.3dshapes/CONN-SMD_4P-P2.00_XUNPU_WAFER-PH2.0-4PWB.step`)
+    directly to the existing footprint instance, a cosmetic-only change (no
+    pad/copper edits — DRC results unchanged, verified before/after: 100
+    violations / 61 unconnected in both cases). A full footprint swap was
+    considered but rejected: the new part's pad sizes and mounting-pad
+    layout differ from the current footprint, and a blind swap risked a real
+    mechanical mismatch rather than just a cosmetic one.
+
 ## Manufacturing
 
 Fabrication package in [`production/`](production/):

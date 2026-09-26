@@ -17574,6 +17574,17 @@
 			(uuid "e6f414d0-434d-4ca1-a61d-0f014e899c24")
 		)
 		(embedded_fonts no)
+		(model "${KIPRJMOD}/lib_jlcpcb/jlcpcb_parts.3dshapes/CONN-SMD_4P-P2.00_XUNPU_WAFER-PH2.0-4PWB.step"
+			(offset
+				(xyz 0 0 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz 0 0 0)
+			)
+		)
 	)
 	(footprint "PCM_SparkFun-LED:WS2812_2020"
 		(layer "F.Cu")
