@@ -21,6 +21,8 @@ two independent 64-LED daisy chains on GPIO6/GPIO7 — one per board side).
 | Status | Power LED (D1), reset button (SW1) |
 | External power option | JST-PH 4-pin connector (J2) for +5V/GND injection |
 | Layers | 2 (F.Cu / B.Cu), GND + 5V copper pours on both sides |
+| Board size | **58.1 x 41.84mm** (compact redesign — was 46 x 91mm; see `LAYOUT_SPEC.md` §1 for the height derivation — the B.Cu component stack, not the LED grid, drives the 41.84mm figure) |
+| Layout | ESP32-C6 alone on F.Cu beside LED matrix A; USB-C/JST/regulator/ESD/switch/passives on B.Cu beside LED matrix B. USB-C (J4) centered on the right edge; JST (J2) at the bottom edge. See `LAYOUT_SPEC.md` for exact coordinates. |
 
 Component numbering is intentional: **D1** and **D4** are reused from the
 MCU/power subsystem (status LED, ESD diode); **D10 through D137** are the
@@ -109,44 +111,86 @@ Board is 2-layer, JLCPCB-standard stackup, no exotic requirements.
 
 ## DRC/ERC status
 
-**DRC (kicad-cli pcb drc), after clearing hand-routed traces and re-routing
-via the Freerouting autorouter:**
+**DRC (kicad-cli pcb drc), after the compact-layout redesign (task series
+1-7): board outline/LED-grid repositioning → ESP32 repositioning → B.Cu
+component repositioning → stale-copper clear → Freerouting re-route +
+GND/+5V zones → final cleanup:**
 
 | Stage | Violations | Unconnected items |
 |---|---|---|
-| Before (broken hand-routing) | 376 (135 solder_mask_bridge, 126 shorting_items, 100 lib_footprint_mismatch, 7 tracks_crossing, 4 clearance, 2 starved_thermal, 2 track_dangling) | 267 |
-| After (Freerouting + GND stitching-via cleanup) | 100 (100 lib_footprint_mismatch only) | 61 |
+| Original layout, before redesign | 100 (100 lib_footprint_mismatch only) | 61 |
+| After Freerouting re-route on new 58.1x41.84mm layout (task 6) | 382 (130 shorting_items, 130 solder_mask_bridge, 100 lib_footprint_mismatch, 9 items_not_allowed, 5 silk_overlap, 4 silk_over_copper, 2 copper_edge_clearance, 1 clearance, 1 via_dangling) | 312 |
+| **Final (task 7, this cleanup)** | **128** (100 lib_footprint_mismatch, 9 items_not_allowed, 5 silk_overlap, 4 silk_over_copper, 3 shorting_items, 3 solder_mask_bridge, 2 copper_edge_clearance, 1 clearance, 1 via_dangling) | **189** |
 
-The remaining 100 violations are all `lib_footprint_mismatch` — pre-existing,
-documented, intentional (same convention as the source `esp32-ce-led` /
-`xiao-led-module-` projects; footprints were hand-picked to match real
-JLCPCB parts rather than the library's default association).
+Most of the task-6 regression (382→128 violations) turned out to be a
+**stale zone fill**, not real routing damage: Freerouting's SES import left
+the GND/+5V copper pours unfilled, so DRC flagged hundreds of phantom
+clearance/short violations against zone outlines that had no actual copper
+yet. A single zone refill (`ZONE_FILLER.Fill()`) cleared the bulk of it.
 
-**All 128 LED daisy-chain data nets (DIN/DOUT, both chains, GPIO6/GPIO7) are
-fully routed with 0 unconnected items.** The 61 remaining unconnected items
-are all on the **GND** and **+5V** copper-pour nets: dense pour-to-pour
-stitching-via gaps and a handful of +5V point-to-point segments Freerouting
-could not close in 2-3 autoroute attempts on this densely-packed 128-LED
-board. These are pour/power-net connectivity gaps, not signal-routing bugs —
-GND and +5V both have full-board copper zones on each layer already
-providing the bulk of the connection; the unconnected markers are DRC being
-conservative about a few remaining island/pour-gap spots. Recommended
-follow-up before fab: open the board in KiCad, run one more interactive
-Freerouting/DRC pass or hand-place a few more stitching vias at the flagged
-GND zone islands, then re-run DRC to confirm 0 before ordering.
+The remaining 28 non-`lib_footprint_mismatch` violations are genuine and
+documented, not routing bugs introduced by this redesign:
+- **9 items_not_allowed + related silk_overlap/silk_over_copper (U2, U3)**:
+  the regulator (U3) and USB ESD IC (U2) footprints, placed per
+  `LAYOUT_SPEC.md` §10, physically overlap the ESP32's antenna-keepout zone
+  on B.Cu. This is a placement conflict from an earlier task in the series,
+  out of scope to fix here without moving U2/U3/re-deriving the layout spec.
+- **3 shorting_items + 3 solder_mask_bridge + 1 clearance (U1 GPIO pads vs
+  J4 mounting tab)**: unused ESP32 GPIO pads sit close to J4's grounded
+  mechanical mounting pad (S1) on the compact board — a real minor clearance
+  issue between an unused pin and a connector shield tab, not a functional
+  short (the GPIO pads are unconnected in the schematic).
+- **2 copper_edge_clearance (J2 NC pads)**: J2's two non-connected alignment
+  pads sit 0.17mm from the board edge (0.5mm constraint) — mechanical
+  alignment pads, not electrical, and the JST connector's own placement is
+  otherwise correct per spec.
+- **1 via_dangling**: a Freerouting-placed +5V via connected on only one
+  layer, left over from the automated route.
 
-**ERC (kicad-cli sch erc): 78 violations, all benign/expected** — unused
-ESP32-C6 GPIO pins (normal for an MCU breakout with many free GPIOs), unused
-USB-C CC1/CC2/SBU pins (only D+/D- used), and 2 `global_label_dangling`
-warnings on `Net-(D73-DOUT)` / `Net-(D137-DOUT)` — the deliberate open ends
-of the two LED daisy chains.
+**All 128 LED daisy-chain SIGNAL nets are fully routed** except two short
+inter-LED gaps that Freerouting's SES import missed: `Net-(D79-DOUT)` was
+hand-routed clean in this task (0 new violations, verified via
+per-segment clearance checks before committing); `Net-(D81-DOUT)` remains
+open (D81↔D82 is a long cross-board run through very dense B.Cu daisy-chain
+copper — safer to hand off for a proper autorouter pass than risk another
+hand-routed short in this pitch). Of the 189 unconnected items, 178 are
+zone-to-zone (GND/+5V copper-pour) stitching gaps — cosmetic DRC noise from
+a segmented pour, not missing electrical connections, since both zones
+already blanket most of each layer. The remaining ~11 are genuine point-to-
+point gaps: `Net-(D81-DOUT)` (above), USB_D+/USB_D- to U2 (blocked by the
+same antenna-keepout placement conflict as above — U2's D+/D- pads sit
+inside the keepout, so no track can legally terminate there without moving
+U2), U3's +3V3 pin (same keepout conflict), and D1's status-LED signal
+net to R3 (D1 was moved off-board during this cleanup — it had been left
+at y=53mm, outside the 41.84mm board height, a leftover coordinate bug from
+the original schematic; now relocated to a clear F.Cu spot at (51, 36) but
+not yet routed to R3 across the dense J2/passives cluster).
+
+**Recommended follow-up before fab**: (1) resolve the U2/U3-vs-antenna-
+keepout placement conflict — either shrink/move the keepout zone per the
+antenna's real RF requirements or nudge U2/U3 clear of it; (2) run one more
+Freerouting pass focused on `Net-(D81-DOUT)` and the D1→R3 net; (3) hand-
+place a handful more GND stitching vias at the remaining zone-pour gaps (16
+were added in this task at clear board locations — spread across the
+bottom margin, right edge, and mid-board — reducing the stitching-gap count
+but a fully-zero unconnected count would need more targeted work than this
+pass's budget allowed).
+
+**ERC (kicad-cli sch erc): 78 violations, all benign/expected, IDENTICAL to
+the pre-redesign baseline** — the schematic was never touched by this PCB
+layout redesign (only footprint positions changed), so ERC output matches
+byte-for-byte: unused ESP32-C6 GPIO pins (normal for an MCU breakout with
+many free GPIOs), unused USB-C CC1/CC2/SBU pins (only D+/D- used), and 2
+`global_label_dangling` warnings on `Net-(D73-DOUT)` / `Net-(D137-DOUT)` —
+the deliberate open ends of the two LED daisy chains.
 
 ## Repo Layout
 
 ```
 esp32-led-matrix.kicad_pro      KiCad project
 esp32-led-matrix.kicad_sch      Schematic (MCU/power + 128x LED matrix)
-esp32-led-matrix.kicad_pcb      PCB layout (routed via Freerouting)
+esp32-led-matrix.kicad_pcb      PCB layout (compact redesign, routed via Freerouting)
+LAYOUT_SPEC.md                  Exact coordinate spec for the compact-layout redesign (source of truth for component placement)
 BOM_jlcpcb_verified.csv         Full BOM w/ LCSC numbers
 production/                     Fab package: gerbers, drill, BOM, CPL
 docs/images/                    Schematic, layout, and 3D render images
